@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Build and Distribution
+build/
+dist/
+*.spec
+
+# Bot Specific
+config.json
+assets/*.png
+!assets/.gitkeep
+
+# IDEs
+.vscode/
+.idea/

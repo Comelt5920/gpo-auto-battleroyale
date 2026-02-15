@@ -1,0 +1,7 @@
+pyautogui
+pillow
+opencv-python
+pyscreeze
+pydirectinput
+requests
+keyboard
