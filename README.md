@@ -1,28 +1,60 @@
-# SCGM-Auto-Br (Advanced)
+# SCGM-Auto-Br
 
-A Python automation tool for Battle Royale games featuring a complete match loop, Discord alerts, and anti-AFK movement.
+A automation for Battle Royale game sessions
 
-## Features
-- **Standard Tkinter GUI**: Stable and lightweight interface.
-- **Match Tracker**: Tracks total matches and session time.
-- **Discord Integration**: Real-time "Match Found" notifications via Webhooks.
-- **AFK Protection**: 5 minutes of random WASD movement during matches.
-- **Full Automation Loop**: Queue -> Mode Select -> Match -> Loot/Finish -> Restart.
+## Key Features
 
-## Setup Instructions
+- **Automated Workflow**: Manages the complete cycle from initial queue to match completion.
+- **Integrated Asset Management**: Built-in GUI for managing detection targets, including an interactive screen capture and cropping tool.
+- **Discord Integration**: Automated notifications via Webhooks for match state changes.
 
-1. **Images (Assets)**:
-   Place these screenshots (PNG) inside the `assets/` folder:
-   - `queue.png`: The initial queue button.
-   - `br_mode.png`: The Battle Royale mode select button.
-   - `solo_mode.png`: The Solo mode button.
-   - `match_found.png`: A unique HUD element that appears when a match starts.
-   - `open.png`: The post-match "Open" button.
-   - `continue.png`: The final "Continue" button to return to lobby.
+## Prerequisites
 
-2. **Discord**: (Optional) Paste your Webhook URL into the GUI to receive alerts.
+- Windows Operating System
+- Python 3.10 or higher
 
-## How to Run
+## Installation
+
+### From Source
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Comelt5920/GPO-auto-battleroyale.git
+   cd GPO-auto-battleroyale
+   ```
+2. Initialize and activate the virtual environment:
+   ```bash
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+3. Install required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Execute the application:
+   ```bash
+   python main.py
+   ```
+
+### Standalone Executable
+Standardized binaries are available under the [Releases](https://github.com/Comelt5920/GPO-auto-battleroyale/releases) section.
+
+## Operation Manual
+
+1. Launch the application.
+2. Navigate to the **Asset Management** tab.
+3. Configure detection targets using the **Capture Helper** or by selecting existing image files.
+4. Return to the **Bot Control** tab and initiate the automation via the **START** button or the **F1** hotkey.
+
+## Technical Build Instructions
+
+To generate a standalone executable using PyInstaller, execute the following command:
 ```bash
-.\venv\Scripts\python main.py
+pyinstaller --onefile --noconsole --name SCGM_AutoBR_v1.0.0 main.py
 ```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+*Developed for advanced game automation and state-based detection.*
