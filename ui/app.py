@@ -11,7 +11,7 @@ import pyautogui
 import keyboard
 
 from utils.config import load_config, save_config, ASSETS_DIR, LOG_FILE
-from ui.components import CoordinatePicker
+from ui.components import CoordinatePicker, AreaPicker
 from core.bot_engine import BotEngine
 from core.vision import ScreenCaptureTool
 
@@ -54,6 +54,10 @@ class SCGMAutoBR:
         self.notebook.add(self.assets_tab, text=" Asset Management ")
         self.setup_assets_tab()
 
+        self.hotkeys_tab = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(self.hotkeys_tab, text=" Hotkeys ")
+        self.setup_hotkeys_tab()
+
     def setup_main_tab(self):
         ttk.Label(self.main_tab, text="SCGM-Auto-Br", style="Header.TLabel").pack(pady=10)
 
@@ -74,6 +78,9 @@ class SCGMAutoBR:
         self.ent_webhook.insert(0, self.config.get("discord_webhook", ""))
         self.btn_show_webhook = ttk.Button(webhook_frame, text="Show", width=6, command=self.toggle_webhook_visibility)
         self.btn_show_webhook.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        self.btn_test_webhook = ttk.Button(webhook_frame, text="Test", width=6, command=self.test_webhook)
+        self.btn_test_webhook.pack(side=tk.RIGHT, padx=(5, 0))
 
         conf_frame = ttk.LabelFrame(self.main_tab, text=" Detection Sensitivity ", padding="5")
         conf_frame.pack(fill=tk.X, pady=5)
@@ -137,7 +144,55 @@ class SCGMAutoBR:
             preview_label.pack(side=tk.RIGHT)
             self.update_preview(key, preview_label)
 
+        # Outcome Capture Area Settings
+        outcome_frame = ttk.LabelFrame(scroll_frame, text=" Discord Outcome Screenshot Area ", padding="5")
+        outcome_frame.pack(fill=tk.X, pady=10, padx=5)
+        
+        self.lbl_area = ttk.Label(outcome_frame, text=f"Area: {self.config.get('outcome_area') or 'Full Screen'}", font=('Segoe UI', 8))
+        self.lbl_area.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(outcome_frame, text="Set Capture Area", command=self.pick_area).pack(side=tk.RIGHT, padx=5)
+
         ttk.Button(scroll_frame, text="Open Debug Log File", command=self.open_log_file).pack(fill=tk.X, pady=10)
+
+    def setup_hotkeys_tab(self):
+        ttk.Label(self.hotkeys_tab, text="Keyboard Layout Remapping", style="Header.TLabel").pack(pady=10)
+        
+        container = ttk.Frame(self.hotkeys_tab)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        self.key_entries = {}
+        keys_to_map = [
+            ("menu", "Menu Button (M)"),
+            ("slot_1", "Slot 1 (1)"),
+            ("forward", "Move Forward (W)"),
+            ("backward", "Move Backward (S)"),
+            ("left", "Move Left (A)"),
+            ("right", "Move Right (D)")
+        ]
+
+        keys_cfg = self.config.get("keys", {})
+        for key_id, label in keys_to_map:
+            frame = ttk.Frame(container)
+            frame.pack(fill=tk.X, pady=2)
+            ttk.Label(frame, text=f"{label}:", width=25).pack(side=tk.LEFT)
+            entry = ttk.Entry(frame, width=10)
+            entry.pack(side=tk.LEFT, padx=5)
+            entry.insert(0, keys_cfg.get(key_id, ""))
+            self.key_entries[key_id] = entry
+
+        ttk.Button(self.hotkeys_tab, text="Save Hotkeys", command=self.save_hotkeys).pack(pady=20)
+
+    def save_hotkeys(self):
+        new_keys = {}
+        for key_id, entry in self.key_entries.items():
+            val = entry.get().strip().lower()
+            if val:
+                new_keys[key_id] = val
+        
+        self.config["keys"] = new_keys
+        save_config(self.config)
+        self.log("Hotkeys updated and saved!")
 
     def log(self, msg, is_error=False):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -193,9 +248,9 @@ class SCGMAutoBR:
 
     def start_capture_helper(self, key, label_widget):
         self.root.iconify()
-        self.log(f"Capturing {key} in 5s...")
+        self.log(f"Capturing {key} in 2.5s...")
         def run():
-            time.sleep(5)
+            time.sleep(2.5)
             screenshot = pyautogui.screenshot()
             def complete(path):
                 self.config["images"][key] = path
@@ -217,6 +272,18 @@ class SCGMAutoBR:
             self.root.deiconify()
         CoordinatePicker(self.root, screenshot, complete)
 
+    def pick_area(self):
+        self.root.iconify()
+        time.sleep(1)
+        screenshot = pyautogui.screenshot()
+        def complete(res):
+            self.config["outcome_area"] = res
+            status = f"Area: {res}"
+            self.lbl_area.config(text=status)
+            save_config(self.config)
+            self.root.deiconify()
+        AreaPicker(self.root, screenshot, complete)
+
     def update_preview(self, key, label_widget):
         path = self.config["images"][key]
         if not os.path.isabs(path): path = os.path.join(os.getcwd(), path)
@@ -232,8 +299,19 @@ class SCGMAutoBR:
 
     def toggle_bot(self):
         if not self.is_running:
-            self.config["discord_webhook"] = self.ent_webhook.get().strip()
+            # 1. Sanitize Webhook (Clean spaces and check format)
+            webhook = self.ent_webhook.get().strip()
+            if webhook and not webhook.startswith("https://discord.com/api/webhooks/"):
+                self.log("Invalid Webhook URL! Must start with discord.com/api/webhooks/", is_error=True)
+                return
+                
+            self.config["discord_webhook"] = webhook
             save_config(self.config)
+            
+            # 2. Lock UI
+            self.ent_webhook.config(state='disabled')
+            self.ent_conf.config(state='disabled')
+            
             self.is_running = True
             self.btn_toggle.config(text="STOP BOT")
             self.start_time = time.time()
@@ -243,7 +321,20 @@ class SCGMAutoBR:
         else:
             self.is_running = False
             self.btn_toggle.config(text="START BOT")
+            
+            # 3. Unlock UI
+            self.ent_webhook.config(state='normal')
+            self.ent_conf.config(state='normal')
             self.log("Stopping...")
+
+    def test_webhook(self):
+        webhook = self.ent_webhook.get().strip()
+        if not webhook:
+            self.log("Please enter a Webhook URL first.", is_error=True)
+            return
+        self.log("Sending test message to Discord...")
+        from utils.discord import send_discord
+        send_discord(webhook, "✅ [SCGM-Auto-Br] Webhook Test Successful!")
 
     def update_timer(self):
         if self.is_running and self.start_time:

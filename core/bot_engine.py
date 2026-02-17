@@ -39,11 +39,25 @@ class BotEngine:
                     if self.app.config.get("match_mode") == "quick":
                         find_and_click("return_to_lobby_alone", self.app.config, self.is_running, self.log, clicks=2)
                     elif time.time() - self.last_leave_click_time > 60:
-                        # Full Match AFK Prevention: Click 2 times every 60s at current pos
-                        pydirectinput.click()
-                        time.sleep(0.2)
-                        pydirectinput.click()
+                        # Full Match AFK Prevention: Move to button but click at current pos to be safe
+                        # or just click at current pos after a small move
+                        pydirectinput.moveRel(1, 1, relative=True) # Small jitter
+                        time.sleep(0.1)
+                        pydirectinput.mouseDown()
+                        time.sleep(0.1)
+                        pydirectinput.mouseUp()
                         self.last_leave_click_time = time.time()
+                
+                # Phase 1: Ultimate Check - Jump to Setup Stats if found
+                if is_image_visible("ultimate", self.app.config):
+                    self.log("Ultimate bar detected during Lobby/Check phase! Jumping to Auto-Punch...")
+                    self.app.match_count += 1
+                    self.app.update_match_count()
+                    self.app.update_status("AUTO-PUNCHING", "green")
+                    self.match_start_time = time.time() # Start timing
+                    self.auto_punch()
+                    self.handle_post_match()
+                    continue
 
                 if is_image_visible("open", self.app.config) or is_image_visible("continue", self.app.config):
                     self.log("End-match screen detected! Jumping to results...")
@@ -81,7 +95,7 @@ class BotEngine:
         while time.time() - start_wait < 480 and self.is_running():
             if time.time() - last_log_time > 30:
                 elapsed = int(time.time() - start_wait)
-                self.log(f"Still waiting for match... ({elapsed}s elapsed)")
+                self.log(f"Still waiting for Ultimate... to trigger auto-punch ({elapsed}s elapsed)")
                 last_log_time = time.time()
 
             if is_image_visible("return_to_lobby_alone", self.app.config, confidence=0.7):
@@ -119,7 +133,13 @@ class BotEngine:
         mode = self.app.config.get("match_mode", "full")
         self.log(f"Starting phase: {mode.upper()} MODE")
         
-        keys = ['w', 'a', 's', 'd']
+        keys_cfg = self.app.config.get("keys", {})
+        keys = [
+            keys_cfg.get("forward", "w"),
+            keys_cfg.get("left", "a"),
+            keys_cfg.get("backward", "s"),
+            keys_cfg.get("right", "d")
+        ]
         start_game_time = time.time()
         
         while self.is_running():
@@ -140,9 +160,10 @@ class BotEngine:
                         self.log("Quick Leave: Exit button clicked (2x).")
                         self.last_leave_click_time = time.time()
                 else: 
-                    pydirectinput.click()
-                    time.sleep(0.2)
-                    pydirectinput.click()
+                    # AFK Prevention: Click with hold
+                    pydirectinput.mouseDown()
+                    time.sleep(0.1)
+                    pydirectinput.mouseUp()
                     self.last_leave_click_time = time.time()
             
             if random.random() < 0.2:
@@ -163,7 +184,11 @@ class BotEngine:
             time.sleep(5.0)
             
             self.log("Setting up stats...")
-            pydirectinput.press('m')
+            keys_cfg = self.app.config.get("keys", {})
+            menu_key = keys_cfg.get("menu", "m")
+            slot1_key = keys_cfg.get("slot_1", "1")
+
+            pydirectinput.press(menu_key)
             time.sleep(1.0)
             
             pos1 = self.app.config.get("pos_1", [0, 0])
@@ -176,9 +201,9 @@ class BotEngine:
                 human_click(pos2[0], pos2[1], self.is_running, move=(i==0))
                 if i > 0: time.sleep(0.2)
             
-            pydirectinput.press('m')
+            pydirectinput.press(menu_key)
             time.sleep(1.0)
-            pydirectinput.press('1')
+            pydirectinput.press(slot1_key)
             time.sleep(1.0)
             
             self.log("Auto-punching mode ACTIVE. Punching (0.5s interval)...")
@@ -197,7 +222,9 @@ class BotEngine:
                 
                 if time.time() - punch_start_time > 120:
                     if random.random() < 0.2:
-                        key = random.choice(['w', 'a', 's', 'd'])
+                        move_keys = [keys_cfg.get("forward", "w"), keys_cfg.get("left", "a"), 
+                                     keys_cfg.get("backward", "s"), keys_cfg.get("right", "d")]
+                        key = random.choice(move_keys)
                         pydirectinput.keyDown(key)
                         time.sleep(0.2)
                         pydirectinput.keyUp(key)
@@ -208,9 +235,13 @@ class BotEngine:
                 
                 if is_leave_v and (time.time() - self.last_leave_click_time > 60):
                     if self.app.config.get("match_mode") == "quick":
-                        if find_and_click("return_to_lobby_alone", self.app.config, self.is_running, self.log):
+                        if find_and_click("return_to_lobby_alone", self.app.config, self.is_running, self.log, clicks=2):
                             self.last_leave_click_time = time.time()
                     else:
+                        # Full Mode AFK Prevention: Click current pos
+                        pydirectinput.mouseDown()
+                        time.sleep(0.1)
+                        pydirectinput.mouseUp()
                         self.last_leave_click_time = time.time()
                 
                 time.sleep(0.05)
@@ -221,34 +252,79 @@ class BotEngine:
         self.log("Post-match phase. Looking for 'Open' or 'Continue'...")
         self.app.update_status("MATCH ENDED", "purple")
         
-        results_found = False
+        notification_sent = False
         start_wait = time.time()
-        while not results_found and self.is_running():
+        last_progress_time = time.time() # 2-minute failsafe timer
+        
+        if self.match_start_time == 0:
+            self.match_start_time = time.time() - 60
+
+        while self.is_running():
+            # Absolute timeout: 5 minutes max in post-match
             if time.time() - start_wait > 300:
                 self.log("Results screen timeout. Returning to lobby.")
                 break
+            
+            # Failsafe: If no progress (no buttons found) for 2 minutes (120s)
+            if time.time() - last_progress_time > 120:
+                self.log("Failsafe: No buttons detected for 2 minutes. Returning to Phase 1.")
+                break
 
-            if find_and_click("open", self.app.config, self.is_running, self.log):
-                # Phase 4: Capture Match Outcome Screenshot
+            # 1. Image Checks
+            is_open_v = is_image_visible("open", self.app.config)
+            is_continue_v = is_image_visible("continue", self.app.config)
+            is_leave_v = is_image_visible("return_to_lobby_alone", self.app.config, confidence=0.7)
+
+            if is_open_v or is_continue_v or is_leave_v:
+                # We see a button, so we are not "stuck" in a black screen/unknown state
+                last_progress_time = time.time() 
+
+            # 2. Capture and Send Notification
+            if (is_continue_v or is_leave_v) and not notification_sent:
+                self.log("Continue screen detected! Sending Discord results...")
                 screenshot_path = "match_finish.png"
                 try:
-                    pyautogui.screenshot(screenshot_path)
-                except:
+                    full_screenshot = pyautogui.screenshot()
+                    area = self.app.config.get("outcome_area")
+                    if area:
+                        cropped_img = full_screenshot.crop(area)
+                        cropped_img.save(screenshot_path)
+                    else:
+                        full_screenshot.save(screenshot_path)
+                except Exception as e:
+                    self.log(f"Screenshot Error: {e}")
                     screenshot_path = None
 
                 elapsed = int(time.time() - self.match_start_time)
-                time_str = f"{elapsed // 60} min {elapsed % 60} sec"
-                self.log(f"'Open' clicked. Time: {time_str}")
+                if elapsed > 3600 or elapsed < 0: elapsed = 0 
                 
+                time_str = f"{elapsed // 60} min {elapsed % 60} sec"
                 msg = f"Queue #{self.app.match_count} Finish time: {time_str}"
+                
                 send_discord(self.app.config.get("discord_webhook"), msg, file_path=screenshot_path)
-                time.sleep(3)
+                self.log(f"Discord results sent. Time: {time_str}")
+                notification_sent = True
+                time.sleep(1)
+
+            # 3. Handle Clicking
+            if is_open_v:
+                # If we see Open, click it and RESET the failsafe timer
+                if find_and_click("open", self.app.config, self.is_running, self.log, clicks=2):
+                    last_found_any_time = time.time()
+                time.sleep(2)
             
-            if find_and_click("continue", self.app.config, self.is_running, self.log) or \
-               find_and_click("return_to_lobby_alone", self.app.config, self.is_running, self.log):
-                self.log("Exit button clicked. Returning to Lobby.")
-                results_found = True
-                time.sleep(5)
-                break
+            if is_continue_v:
+                if find_and_click("continue", self.app.config, self.is_running, self.log, clicks=2):
+                    self.log("Continue clicked. Exiting post-match.")
+                    time.sleep(4)
+                    break
             
-            time.sleep(4)
+            if is_leave_v:
+                # Stronger Return to Lobby attempt
+                self.log("Attempting to click 'Return to Lobby'...")
+                if find_and_click("return_to_lobby_alone", self.app.config, self.is_running, self.log, clicks=3):
+                    self.log("Return to Lobby clicked multiple times. Exiting.")
+                    time.sleep(4)
+                    break
+            
+            time.sleep(2)

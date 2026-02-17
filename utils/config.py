@@ -22,7 +22,16 @@ def load_config():
             "continue": "continue.png"
         },
         "pos_1": [100, 100],
-        "pos_2": [200, 200]
+        "pos_2": [200, 200],
+        "outcome_area": None,
+        "keys": {
+            "menu": "m",
+            "slot_1": "1",
+            "forward": "w",
+            "left": "a",
+            "backward": "s",
+            "right": "d"
+        }
     }
     if os.path.exists(CONFIG_FILE):
         try:
